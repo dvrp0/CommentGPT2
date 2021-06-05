@@ -30,3 +30,6 @@
 2: 하 이쓰레기들이 발악을 하는 걸로 보인다 5.친일파재산환수법 반대-자한당 태극기
 3: 하 친일파의 후예들이 이런 소리를 하니까 가슴이 철렁 내려앉는구나.
 ```
+
+## TODO
+* [KcBERT Pre-Training Corpus](https://www.kaggle.com/junbumlee/kcbert-pretraining-corpus-korean-news-comments)로 학습
