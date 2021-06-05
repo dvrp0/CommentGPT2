@@ -7,7 +7,7 @@
 ```
 !python train.py --train --batch-size 96 --dataset_path "PATH" --tpu_cores 8 --max-len 32 --max_epochs 100
 ```
-학습 코드는 [haven-jeon](https://github.com/haven-jeon/KoGPT2-chatbot) 님의 코드를 사용했습니다.
+학습 코드는 [haven-jeon](https://github.com/haven-jeon/KoGPT2-chatbot) 님의 코드를 조금 변형하여 사용했습니다.
 
 ## 생성
 ```
