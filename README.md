@@ -7,7 +7,7 @@
 ```
 !python train.py --train --batch-size 96 --dataset_path "PATH" --tpu_cores 8 --max-len 32 --max_epochs 100
 ```
-학습 코드는 [haven-jeon](https://github.com/haven-jeon/KoGPT2-chatbot) 님의 코드를 조금 변형하여 사용했습니다.
+학습 코드는 [haven-jeon](https://github.com/haven-jeon/KoGPT2-chatbot) 님의 코드를 조금 변형하여 사용했습니다.   
 사용된 데이터는 댓글 10,007개(약 1.28MB)이며, Colab TPU에서 1시간 가량 학습했습니다.
 
 ## 생성
