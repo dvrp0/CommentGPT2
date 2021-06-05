@@ -3,7 +3,6 @@ import argparse
 import logging
 
 import numpy as np
-import pandas as pd
 import torch
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -14,25 +13,25 @@ from transformers import PreTrainedTokenizerFast, GPT2LMHeadModel
 
 parser = argparse.ArgumentParser(description='Comment fine-tuned KoGPT2')
 
-parser.add_argument('--chat',
+parser.add_argument('--generate',
                     action='store_true',
-                    default=False,
-                    help='response generation on given user input')
+                    default=False)
 
-parser.add_argument('--sentiment',
+parser.add_argument('--inputs',
                     type=str,
-                    default='0',
-                    help='sentiment for system. 0 is neutral, 1 is negative, 2 is positive.')
+                    default='진짜')
 
 parser.add_argument('--model_params',
                     type=str,
-                    default='model_chp/model_-last.ckpt',
-                    help='model binary for starting chat')
+                    default='NONE')
+
+parser.add_argument('--dataset_path',
+                    type=str,
+                    default='NONE')
 
 parser.add_argument('--train',
                     action='store_true',
-                    default=False,
-                    help='for training')
+                    default=False)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -47,55 +46,46 @@ TOKENIZER = PreTrainedTokenizerFast.from_pretrained("skt/kogpt2-base-v2",
             bos_token=BOS, eos_token=EOS, unk_token='<unk>',
             pad_token=PAD, mask_token=MASK) 
 
-
-class CharDataset(Dataset):
+class CommentDataset(Dataset):
     def __init__(self, comments, max_len=32):
         self._data = comments
-        self.first = True
         self.bos = BOS
         self.eos = EOS
         self.mask = MASK
         self.pad = PAD
         self.max_len = max_len
-        self.tokenizer = TOKENIZER 
+        self.tokenizer = TOKENIZER
+
+        temp = []
+
+        for x in self._data:
+            toked = self.tokenizer.tokenize(x)
+
+            while len(toked) > self.max_len - 2:
+                temp.append([self.bos] + toked[:self.max_len - 2] + [self.eos])
+                toked = toked[self.max_len - 1:]
+            
+            temp.append([self.bos] + toked + [self.eos])
+
+        self._data = temp
 
     def __len__(self):
         return len(self._data)
 
     def __getitem__(self, idx):
-        turn = self._data[idx]
-        toked = self.tokenzier.tokenize(self.bos + turn + self.eos)
+        toked = self._data[idx]
         
-        if len(toked) > self.max_len:
-            toked = toked[-(int(self.max_len / 2)):]
-
-        labels = toked
-        
-        if self.first:
-            logging.info(f'comment: {turn}')
-            logging.info(f'toked comment: {toked}')
-            logging.info(f'labels: {labels}')
-
-            self.first = False
-
-        mask = [1] * len(toked) + [0] * (self.max_len - len(toked))
-        labels_ids = self.tokenizer.convert_tokens_to_ids(labels)
-
-        while len(labels_ids) < self.max_len:
-            labels_ids += [self.tokenizer.pad_token_id]
-
         token_ids = self.tokenizer.convert_tokens_to_ids(toked)
-
         while len(token_ids) < self.max_len:
             token_ids += [self.tokenizer.pad_token_id]
-
-        return(token_ids, np.array(mask),
-               labels_ids)
+            
+        return token_ids
 
 class CommentKoGPT2(LightningModule):
-    def __init__(self, hparams, **kwargs):
+    def __init__(self, hparams, dataset_path='', **kwargs) -> None:
         super(CommentKoGPT2, self).__init__()
-        self.hparams = hparams
+        self.save_hyperparameters(hparams)
+        self.dataset_path = dataset_path
         self.neg = -1e18
         self.kogpt2 = GPT2LMHeadModel.from_pretrained('skt/kogpt2-base-v2')
         self.loss_function = torch.nn.CrossEntropyLoss(reduction='none')
@@ -123,20 +113,19 @@ class CommentKoGPT2(LightningModule):
                             help='warmup ratio')
         return parser
 
-    def forward(self, inputs):
-        # (batch, seq_len, hiddens)
-        output = self.kogpt2(inputs, return_dict=True)
-        return output.logits
+    def forward(self, inputs, labels):
+        output = self.kogpt2(inputs, labels=labels, return_dict=True)
+        
+        return output
 
     def training_step(self, batch, batch_idx):
-        token_ids, mask, label = batch
-        out = self(token_ids)
-        mask_3d = mask.unsqueeze(dim=2).repeat_interleave(repeats=out.shape[2], dim=2)
-        mask_out = torch.where(mask_3d == 1, out, self.neg * torch.ones_like(out))
-        loss = self.loss_function(mask_out.transpose(2, 1), label)
-        loss_avg = loss.sum() / mask.sum()
-        self.log('train_loss', loss_avg)
-        return loss_avg
+        token_ids = batch
+        outputs = self.forward(token_ids, token_ids)
+        
+        loss, logits = outputs[:2]
+        self.log('train_log', loss)
+        
+        return loss
 
     def configure_optimizers(self):
         # Prepare optimizer
@@ -160,44 +149,50 @@ class CommentKoGPT2(LightningModule):
         return [optimizer], [lr_scheduler]
 
     def _collate_fn(self, batch):
-        data = [item[0] for item in batch]
-        mask = [item[1] for item in batch]
-        label = [item[2] for item in batch]
-        return torch.LongTensor(data), torch.LongTensor(mask), torch.LongTensor(label)
+        return torch.LongTensor(batch)
 
     def train_dataloader(self):
-        with open('comment_data.txt', 'r') as f:
+        with open(self.dataset_path, 'r') as f:
             data = f.readlines()
-        
         self.train_set = CommentDataset(data, max_len=self.hparams.max_len)
         train_dataloader = DataLoader(
-            self.train_set, batch_size=self.hparams.batch_size, num_workers=2,
+            self.train_set, batch_size=self.hparams.batch_size, num_workers=1,
             shuffle=True, collate_fn=self._collate_fn)
         return train_dataloader
+
+    def generate(self, inputs):
+        tokenizer = TOKENIZER
+        input_ids = tokenizer.encode(inputs, add_special_tokens=False, return_tensors="pt")
+        outputs = model.kogpt2.generate(input_ids=input_ids, do_sample=True, max_length=32, repetition_penalty=2.0, top_k=50, top_p=0.95, num_return_sequences=3)
+
+        for index, i in enumerate(outputs):
+            print("{0}: {1}".format(index + 1, tokenizer.decode(i, skip_special_tokens=True)))
 
 parser = CommentKoGPT2.add_model_specific_args(parser)
 parser = Trainer.add_argparse_args(parser)
 args = parser.parse_args()
 logging.info(args)
-
+      
 if __name__ == "__main__":
     if args.train:
+        # python train_torch.py --train --gpus 1 --max_epochs 3
         checkpoint_callback = ModelCheckpoint(
-            dirpath='model_chp',
             filename='{epoch:02d}-{train_loss:.2f}',
             verbose=True,
             save_last=True,
-            monitor='train_loss',
             mode='min',
             prefix='model_'
         )
-        # python train_torch.py --train --gpus 1 --max_epochs 3
-        model = CommentKoGPT2(args)
+        if args.model_params == "NONE":
+            model = CommentKoGPT2(args, dataset_path=args.dataset_path)
+        else:
+            model = CommentKoGPT2.load_from_checkpoint(args.model_params, dataset_path=args.dataset_path)
         model.train()
         trainer = Trainer.from_argparse_args(
             args,
             checkpoint_callback=checkpoint_callback, gradient_clip_val=1.0)
         trainer.fit(model)
         logging.info('best model path {}'.format(checkpoint_callback.best_model_path))
-    if args.chat:
+    elif args.generate:
         model = CommentKoGPT2.load_from_checkpoint(args.model_params)
+        model.generate(args.inputs)
