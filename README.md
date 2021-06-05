@@ -1,7 +1,7 @@
 # CommentGPT2
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DaveRipper/CommentGPT2/blob/master/CommentGPT2.ipynb)
 
-[KoGPT2](https://github.com/SKT-AI/KoGPT2)를 [특정 뉴스 기사](https://news.v.daum.net/v/20190314112104189)의 댓글 데이터로 파인튜닝시킨 모델입니다. 간단한 실험 용도로 제작했기에 한 개의 기사의 데이터만 사용했습니다.
+[KoGPT2](https://github.com/SKT-AI/KoGPT2)를 [특정 뉴스 기사](https://news.v.daum.net/v/20190314112104189)의 댓글 데이터로 파인튜닝시킨 모델입니다. 간단한 실험 용도로 제작했기에 한 개의 기사 데이터만 사용했습니다.
 
 ## 학습
 ```
