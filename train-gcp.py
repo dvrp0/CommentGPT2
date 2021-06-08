@@ -158,14 +158,10 @@ class CommentKoGPT2(LightningModule):
         return torch.LongTensor(batch)
 
     def train_dataloader(self):
-        if self.bucket != '':
-            client = storage.Client()
-            bucket = client.get_bucket('pytorchtpu')
-            blob = bucket.get_blob(self.dataset_path)
-            data = blob.download_as_string().splitlines()
-        else:
-            with open(self.dataset_path, 'r') as f:
-                data = f.readlines()
+        client = storage.Client()
+        bucket = client.get_bucket('pytorchtpu')
+        blob = bucket.get_blob(self.dataset_path)
+        data = blob.download_as_string().splitlines()
         self.train_set = CommentDataset(data, max_len=self.hparams.max_len)
         train_dataloader = DataLoader(
             self.train_set, batch_size=self.hparams.batch_size, num_workers=1,
@@ -196,9 +192,9 @@ if __name__ == "__main__":
             prefix='model_'
         )
         if args.model_params == "NONE":
-            model = CommentKoGPT2(args, dataset_path=args.dataset_path)
+            model = CommentKoGPT2(args, dataset_path=args.dataset_path, bucket=args.bucket)
         else:
-            model = CommentKoGPT2.load_from_checkpoint(args.model_params, dataset_path=args.dataset_path)
+            model = CommentKoGPT2.load_from_checkpoint(args.model_params, dataset_path=args.dataset_path, bucket=args.bucket)
         model.train()
         trainer = Trainer.from_argparse_args(
             args,
