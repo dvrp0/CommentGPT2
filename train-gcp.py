@@ -10,6 +10,7 @@ from pytorch_lightning.core.lightning import LightningModule
 from torch.utils.data import DataLoader, Dataset
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
 from transformers import PreTrainedTokenizerFast, GPT2LMHeadModel
+from google.cloud import storage
 
 parser = argparse.ArgumentParser(description='Comment fine-tuned KoGPT2')
 
@@ -32,6 +33,10 @@ parser.add_argument('--dataset_path',
 parser.add_argument('--train',
                     action='store_true',
                     default=False)
+
+parser.add_argument('--bucket',
+                    type=str,
+                    default='NONE')
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -82,10 +87,11 @@ class CommentDataset(Dataset):
         return token_ids
 
 class CommentKoGPT2(LightningModule):
-    def __init__(self, hparams, dataset_path='', **kwargs) -> None:
+    def __init__(self, hparams, bucket='', dataset_path='', **kwargs) -> None:
         super(CommentKoGPT2, self).__init__()
         self.save_hyperparameters(hparams)
         self.dataset_path = dataset_path
+        self.bucket = bucket
         self.neg = -1e18
         self.kogpt2 = GPT2LMHeadModel.from_pretrained('skt/kogpt2-base-v2')
         self.loss_function = torch.nn.CrossEntropyLoss(reduction='none')
@@ -152,8 +158,14 @@ class CommentKoGPT2(LightningModule):
         return torch.LongTensor(batch)
 
     def train_dataloader(self):
-        with open(self.dataset_path, 'r') as f:
-            data = f.readlines()
+        if self.bucket != '':
+            client = storage.Client()
+            bucket = client.get_bucket('pytorchtpu')
+            blob = bucket.get_blob(self.dataset_path)
+            data = blob.download_as_string().splitlines()
+        else:
+            with open(self.dataset_path, 'r') as f:
+                data = f.readlines()
         self.train_set = CommentDataset(data, max_len=self.hparams.max_len)
         train_dataloader = DataLoader(
             self.train_set, batch_size=self.hparams.batch_size, num_workers=1,
